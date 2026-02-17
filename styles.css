@@ -153,12 +153,13 @@ a {
   color: #fff;
 }
 
+/* Views are toggled via the HTML [hidden] attribute */
 .view {
-  display: none;
+  display: block;
 }
 
-.view.isVisible {
-  display: block;
+.view[hidden] {
+  display: none;
 }
 
 /* =========================
