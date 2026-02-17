@@ -1,7 +1,7 @@
 /* FILE: styles.css */
 
 /* =========================
-   Base Reset / Variables
+   Base / Variables
    ========================= */
 
 :root {
@@ -16,9 +16,10 @@
   --border: #273142;
   --radius: 14px;
   --radius-sm: 10px;
-  --shadow: 0 8px 24px rgba(0,0,0,0.25);
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
   --tap: 44px;
   --transition: 0.18s ease;
+
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
@@ -26,6 +27,11 @@
 *::before,
 *::after {
   box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
 }
 
 body {
@@ -45,12 +51,14 @@ a {
   left: -999px;
   top: auto;
 }
+
 .skipLink:focus {
   left: 12px;
   top: 12px;
   background: var(--card);
   padding: 8px 12px;
   border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
 }
 
 /* =========================
@@ -130,7 +138,7 @@ a {
   border: 1px solid var(--border);
   background: var(--card);
   color: var(--text);
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   transition: var(--transition);
 }
@@ -143,6 +151,14 @@ a {
   background: var(--accent);
   border-color: var(--accent2);
   color: #fff;
+}
+
+.view {
+  display: none;
+}
+
+.view.isVisible {
+  display: block;
 }
 
 /* =========================
@@ -207,10 +223,15 @@ input[type="color"] {
   height: var(--tap);
   border: none;
   background: none;
+  padding: 0;
 }
 
 input[type="range"] {
   width: 100%;
+}
+
+select.input {
+  appearance: none;
 }
 
 /* =========================
@@ -239,6 +260,10 @@ input[type="range"] {
   background: #243041;
 }
 
+.btn:active {
+  transform: translateY(1px);
+}
+
 .btnPrimary {
   background: var(--accent);
   border-color: var(--accent2);
@@ -252,7 +277,7 @@ input[type="range"] {
 }
 
 .btnDelete:hover {
-  background: rgba(229,83,83,0.12);
+  background: rgba(229, 83, 83, 0.12);
 }
 
 /* =========================
@@ -263,8 +288,13 @@ input[type="range"] {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 0;
+  padding: 8px 0;
   font-size: 14px;
+}
+
+.devicePickRow input {
+  width: 18px;
+  height: 18px;
 }
 
 .deviceList,
@@ -290,7 +320,7 @@ input[type="range"] {
 
 .deviceName,
 .sceneName {
-  font-weight: 600;
+  font-weight: 700;
   margin-bottom: 4px;
 }
 
@@ -298,7 +328,7 @@ input[type="range"] {
 .sceneMeta {
   font-size: 12px;
   color: var(--muted);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .deviceActions,
@@ -330,12 +360,48 @@ input[type="range"] {
 
 .sectionTitle {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
   margin-bottom: 6px;
 }
 
 .controlsPanel {
   margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.controlGroup {
+  background: #0f151c;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  animation: popIn 160ms ease both;
+}
+
+.controlGroup__head {
+  margin-bottom: 10px;
+}
+
+.controlGroup__title {
+  font-weight: 700;
+}
+
+.controlGroup__meta {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+@keyframes popIn {
+  from {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 /* =========================
@@ -345,7 +411,7 @@ input[type="range"] {
 .modalBackdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.6);
+  background: rgba(0, 0, 0, 0.6);
   z-index: 20;
 }
 
@@ -355,7 +421,7 @@ input[type="range"] {
   top: 50%;
   transform: translate(-50%, -50%);
   width: 92%;
-  max-width: 420px;
+  max-width: 460px;
   background: var(--card);
   border-radius: var(--radius);
   border: 1px solid var(--border);
@@ -366,12 +432,22 @@ input[type="range"] {
 .modal__header,
 .modal__footer {
   padding: 12px 14px;
+}
+
+.modal__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   border-bottom: 1px solid var(--border);
 }
 
 .modal__footer {
-  border-bottom: none;
   border-top: 1px solid var(--border);
+}
+
+.modal__title {
+  margin: 0;
+  font-size: 16px;
 }
 
 .modal__body {
@@ -409,4 +485,12 @@ input[type="range"] {
   height: 1px;
   background: var(--border);
   margin: 12px 0;
+}
+
+/* Reduce motion */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
 }
