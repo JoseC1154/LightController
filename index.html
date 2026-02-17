@@ -1,0 +1,155 @@
+<!-- FILE: index.html -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0f14" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Scene Controller</title>
+
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="icon" href="./icons/icon-192.png" sizes="192x192" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+
+<body>
+  <a class="skipLink" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar__left">
+      <div class="brand">
+        <div class="brand__mark" aria-hidden="true">◉</div>
+        <div class="brand__text">
+          <div class="brand__title">Scene Controller</div>
+          <div class="brand__sub">Devices + Scenes</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="topbar__right">
+      <div class="statusPill" id="statusPill" role="status" aria-live="polite">
+        <span class="dot" id="statusDot" aria-hidden="true"></span>
+        <span class="statusText" id="statusText">Mock mode</span>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="main">
+    <nav class="tabs" aria-label="Primary">
+      <button class="tab isActive" id="tabScenes" type="button" aria-current="page">
+        Scenes
+      </button>
+      <button class="tab" id="tabDevices" type="button">
+        Devices
+      </button>
+    </nav>
+
+    <!-- SCENES VIEW -->
+    <section class="view isVisible" id="viewScenes" aria-labelledby="tabScenes">
+      <section class="card">
+        <div class="card__header">
+          <h1 class="card__title">Build a scene</h1>
+          <p class="card__sub">Pick devices, set values, apply or save.</p>
+        </div>
+
+        <form class="sceneBuilder" id="sceneBuilder" autocomplete="off">
+          <label class="field">
+            <span class="field__label">Scene name</span>
+            <input class="input" id="sceneName" type="text" maxlength="40" placeholder="e.g., Daylight" />
+          </label>
+
+          <div class="divider"></div>
+
+          <div class="builderRow">
+            <div class="builderCol">
+              <div class="sectionTitle">Devices in this scene</div>
+              <div class="muted" id="deviceHelpText">
+                Add devices in the Devices tab, then select them here.
+              </div>
+
+              <div class="devicePickList" id="devicePickList" aria-label="Device selector">
+                <!-- populated by app.js -->
+              </div>
+            </div>
+
+            <div class="builderCol">
+              <div class="sectionTitle">Controls</div>
+              <div class="muted" id="controlsHint">
+                Select at least one device to reveal controls.
+              </div>
+
+              <div class="controlsPanel" id="controlsPanel">
+                <!-- populated by app.js -->
+              </div>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="btn" id="btnApplyNow" type="button">Apply now</button>
+            <button class="btn btnPrimary" id="btnSaveScene" type="button">Save scene</button>
+          </div>
+
+          <p class="tiny muted" id="builderMessage" aria-live="polite"></p>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="card__header">
+          <h2 class="card__title">Saved scenes</h2>
+          <p class="card__sub">Tap Apply to run a scene across multiple devices.</p>
+        </div>
+
+        <div class="sceneList" id="sceneList" aria-label="Saved scenes">
+          <!-- populated by app.js -->
+        </div>
+      </section>
+    </section>
+
+    <!-- DEVICES VIEW -->
+    <section class="view" id="viewDevices" aria-labelledby="tabDevices" hidden>
+      <section class="card">
+        <div class="card__header">
+          <h1 class="card__title">Devices</h1>
+          <p class="card__sub">Add lights, plugs, switches — then build scenes.</p>
+        </div>
+
+        <div class="actions">
+          <button class="btn btnPrimary" id="btnAddDevice" type="button">Add device</button>
+        </div>
+
+        <div class="deviceList" id="deviceList" aria-label="Device list">
+          <!-- populated by app.js -->
+        </div>
+      </section>
+    </section>
+
+    <!-- MODAL (reused) -->
+    <div class="modalBackdrop" id="modalBackdrop" hidden></div>
+
+    <section class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" hidden>
+      <div class="modal__header">
+        <h2 class="modal__title" id="modalTitle">Modal</h2>
+        <button class="iconBtn" id="btnCloseModal" type="button" aria-label="Close">
+          ✕
+        </button>
+      </div>
+      <div class="modal__body" id="modalBody">
+        <!-- populated by app.js -->
+      </div>
+      <div class="modal__footer" id="modalFooter">
+        <!-- populated by app.js -->
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span id="footerText" class="muted">Offline-ready UI • Scenes saved on this device</span>
+  </footer>
+
+  <script src="./app.js" defer></script>
+</body>
+</html>
