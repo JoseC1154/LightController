@@ -34,6 +34,10 @@ const controlsPanelEl = document.getElementById("controlsPanel");
 const controlsHintEl = document.getElementById("controlsHint");
 
 const btnAddDevice = document.getElementById("btnAddDevice");
+const btnScanNetwork = document.getElementById("btnScanNetwork");
+const btnFetchHelper = document.getElementById("btnFetchHelper");
+const btnHelperSettings = document.getElementById("btnHelperSettings");
+const btnExtendedScan = document.getElementById("btnExtendedScan");
 const btnApplyNow = document.getElementById("btnApplyNow");
 const btnSaveScene = document.getElementById("btnSaveScene");
 
@@ -98,8 +102,12 @@ async function applyDeviceState(device, state) {
       case "generic_http":
         return genericHttpApply(device, state);
 
-      // placeholders for later
+      // implement common providers
       case "wled":
+        // WLED devices typically accept HTTP POST/GET; prefer endpoint if provided
+        if (device.endpoint) return genericHttpApply(device, state);
+        return mockApply(device, state);
+
       case "tuya":
       case "hue":
       default:
@@ -127,13 +135,33 @@ async function genericHttpApply(device, state) {
     state
   };
 
-  const res = await fetch(device.endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
+  // Try direct fetch first
+  try {
+    const res = await fetch(device.endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    return { ok: res.ok, status: res.status };
+  } catch (err) {
+    console.warn('Direct fetch failed, attempting helper proxy:', err);
 
-  return { ok: res.ok, status: res.status };
+    // Fallback to the local helper proxy if configured
+    try {
+      const helperUrl = getHelperUrl();
+      const proxyRes = await fetch(helperUrl.replace(/\/+$/, '') + '/proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: device.endpoint, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      });
+      const j = await proxyRes.json();
+      if (j.ok) return { ok: j.statusCode >= 200 && j.statusCode < 300, status: j.statusCode, proxy: true };
+      return { ok: false, error: j.error || 'proxy failed' };
+    } catch (err2) {
+      console.error('Proxy request failed:', err2);
+      return { ok: false, error: String(err2 || err) };
+    }
+  }
 }
 
 /* ---------- Tabs ---------- */
@@ -186,6 +214,401 @@ function closeModal() {
 btnAddDevice.addEventListener("click", () => {
   openDeviceEditor();
 });
+
+// Network scan (browser-only, best-effort)
+btnScanNetwork?.addEventListener("click", () => {
+  openNetworkScanner();
+});
+
+btnFetchHelper?.addEventListener("click", () => {
+  fetchHelperDevices();
+});
+
+btnHelperSettings?.addEventListener("click", () => {
+  openHelperSettings();
+});
+
+function getHelperUrl() {
+  return localStorage.getItem('lc.helperUrl') || 'http://localhost:3000';
+}
+
+function setHelperUrl(u) {
+  localStorage.setItem('lc.helperUrl', u);
+}
+
+function openHelperSettings() {
+  const current = getHelperUrl();
+  const body = `
+    <div class="field">
+      <span class="field__label">Helper URL</span>
+      <input class="input" id="helperUrlInput" type="text" value="${escapeAttr(current)}" placeholder="http://localhost:3000" />
+      <div class="tiny muted" style="margin-top:6px;">Enter the Node helper base URL (including protocol and port).</div>
+    </div>
+  `;
+
+  const footer = `
+    <div class="actions" style="margin:0;">
+      <button class="btn" id="btnCancelHelper" type="button">Cancel</button>
+      <button class="btn btnPrimary" id="btnSaveHelper" type="button">Save</button>
+    </div>
+  `;
+
+  openModal('Helper settings', body, footer);
+  document.getElementById('btnCancelHelper').addEventListener('click', closeModal);
+  document.getElementById('btnSaveHelper').addEventListener('click', () => {
+    const v = document.getElementById('helperUrlInput').value.trim();
+    if (!v) {
+      alert('Please enter a helper URL.');
+      return;
+    }
+    setHelperUrl(v);
+    setBuilderMessage('Helper URL saved.');
+    closeModal();
+  });
+}
+
+async function fetchHelperDevices() {
+  openModal("Fetch helper devices", `<div class=\"muted\">Fetching from helper...</div>`);
+
+// Extended scan via helper: shows TCP/HTTP/UDP probe results and suggests HTTP-add candidates
+btnExtendedScan?.addEventListener('click', async () => {
+  openModal('Extended scan', `<div class="muted">Running extended scan (TCP/HTTP/UDP)...</div>`);
+  const helperUrl = getHelperUrl();
+  try {
+    const res = await fetch(helperUrl.replace(/\/+$/, '') + '/extended-scan', { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const j = await res.json();
+    if (!j.ok || !Array.isArray(j.results)) {
+      modalBody.innerHTML = `<div class="muted">No results from helper.</div>`;
+      modalFooter.innerHTML = `<div class="actions"><button class="btn" id="btnCloseExt">Close</button></div>`;
+      document.getElementById('btnCloseExt').addEventListener('click', closeModal);
+      return;
+    }
+
+    let html = `<div style="max-height:440px;overflow:auto;font-family:monospace;font-size:12px;">`;
+    const candidates = [];
+    for (const it of j.results) {
+      html += `<div style="border-bottom:1px solid #eee;padding:8px 0;"><strong>${escapeHtml(it.name || it.address)}</strong> <span class="tiny muted">${escapeHtml(it.address)}</span>`;
+      // tcp
+      const openPorts = (it.checks?.tcp || []).filter(c => c.open).map(c => c.port);
+      html += `<div class="tiny muted">Open TCP: ${openPorts.length?openPorts.join(', '):'none'}</div>`;
+
+      // http
+      if (it.checks?.http && it.checks.http.length) {
+        html += `<div style="margin-top:6px;">HTTP probes:`;
+        for (const h of it.checks.http) {
+          const ok = h.ok;
+          html += `<div style="margin-top:6px;padding:6px;border:1px solid #f3f3f3;background:#fff;">
+            <div><strong>${escapeHtml(h.url)}</strong> — ${ok?('Status '+h.statusCode):escapeHtml(h.error||'fail')}</div>`;
+          if (ok && h.headers && (String(h.headers['content-type']||'').includes('application/json') || JSON.stringify(h).toLowerCase().includes('wled') || JSON.stringify(h).toLowerCase().includes('wled'))) {
+            // candidate HTTP device
+            candidates.push({ address: it.address, url: h.url });
+            html += `<div class="tiny muted">Looks like JSON HTTP — candidate for Generic HTTP</div>`;
+          }
+          html += `</div>`;
+        }
+        html += `</div>`;
+      }
+
+      // udp
+      if (it.checks?.udp_56700) {
+        html += `<div class="tiny muted">UDP 56700: ${it.checks.udp_56700.ok?('response from '+escapeHtml(it.checks.udp_56700.from||'')):escapeHtml(it.checks.udp_56700.error||'no response')}</div>`;
+        if (it.checks.udp_56700.ok) {
+          html += `<div class="tiny muted">UDP response suggests LIFX/UDP device.</div>`;
+        }
+      }
+
+      html += `</div>`;
+    }
+
+    // build footer with candidate add buttons
+    let footerHtml = `<div class="actions" style="margin:0;">`;
+    footerHtml += `<button class="btn" id="btnCloseExt2">Close</button>`;
+    if (candidates.length) {
+      footerHtml += `<button class="btn btnPrimary" id="btnAddCandidates">Add ${candidates.length} HTTP candidate(s)</button>`;
+    }
+    footerHtml += `</div>`;
+
+    modalBody.innerHTML = html + `</div>`;
+    modalFooter.innerHTML = footerHtml;
+    document.getElementById('btnCloseExt2').addEventListener('click', closeModal);
+
+    const addBtn = document.getElementById('btnAddCandidates');
+    if (addBtn) {
+      addBtn.addEventListener('click', () => {
+        for (const c of candidates) {
+          // choose root endpoint (strip path)
+          try {
+            const u = new URL(c.url);
+            const endpoint = `${u.protocol}//${u.hostname}${u.port?(':'+u.port):''}/`;
+            const dev = { id: uid(), name: `Discovered ${u.hostname}`, type: 'light', provider: 'generic_http', endpoint, capabilities: defaultCapabilitiesForType('light') };
+            devices.push(dev);
+          } catch (e) {
+            console.warn('Bad candidate URL', c.url);
+          }
+        }
+        persistDevices();
+        renderAll();
+        setBuilderMessage(`Added ${candidates.length} candidate device(s)`);
+        closeModal();
+      });
+    }
+
+  } catch (err) {
+    modalBody.innerHTML = `<div class="muted">Extended scan failed: ${escapeHtml(String(err))}</div>`;
+    modalFooter.innerHTML = `<div class="actions"><button class="btn" id="btnCloseExtErr">Close</button></div>`;
+    document.getElementById('btnCloseExtErr').addEventListener('click', closeModal);
+  }
+});
+
+  const helperUrl = getHelperUrl();
+  try {
+    const res = await fetch(helperUrl.replace(/\/+$/, '') + '/devices', { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const list = await res.json();
+
+    if (!Array.isArray(list) || !list.length) {
+      modalBody.innerHTML = `<div class=\"muted\">No devices reported by helper.</div>`;
+      modalFooter.innerHTML = `<div class=\"actions\"><button class=\"btn\" id=\"btnCloseModal2\">Close</button></div>`;
+      document.getElementById("btnCloseModal2").addEventListener("click", closeModal);
+      return;
+    }
+
+    // build UI
+    let html = `<div style=\"max-height:320px;overflow:auto;\">`;
+    for (const d of list) {
+      const addr = (d.addresses && d.addresses[0]) || (d.addresses || []).join(',') || '';
+      const displayName = escapeHtml(d.name || d.id || addr);
+      const rootUrl = addr ? (window.location.protocol === 'https:' ? `https://${addr}${d.port?(':'+d.port):''}/` : `http://${addr}${d.port?(':'+d.port):''}/`) : '';
+      html += `
+        <div class=\"devicePickRow\" style=\"margin-bottom:10px;\">
+          <div style=\"display:flex;align-items:center;justify-content:space-between;\">
+            <div style=\"flex:1;\"> <strong>${displayName}</strong>
+              <div class=\"tiny muted\">${escapeHtml(addr)} ${d.port?(':'+d.port):''} • ${escapeHtml(d.source||'')}</div>
+            </div>
+            <div style=\"margin-left:8px;display:flex;gap:8px;align-items:center;\">
+              <button class=\"btn\" data-probe-url=\"${escapeAttr(rootUrl)}\">Probe</button>
+              <button class=\"btn btnPrimary\" data-add-ip=\"${escapeAttr(addr)}\" data-add-port=\"${d.port||''}\">Add</button>
+            </div>
+          </div>
+          <div class=\"tiny muted\" data-probe-result-for=\"${escapeAttr(rootUrl)}\" style=\"margin-top:6px;white-space:pre-wrap;max-height:160px;overflow:auto;\"></div>
+        </div>`;
+    }
+    html += `</div>`;
+
+    modalBody.innerHTML = html;
+    modalFooter.innerHTML = `<div class=\"actions\"><button class=\"btn\" id=\"btnCloseModal3\">Close</button></div>`;
+    document.getElementById("btnCloseModal3").addEventListener("click", closeModal);
+
+    // wire probe buttons
+    modalBody.querySelectorAll("button[data-probe-url]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const url = btn.getAttribute("data-probe-url");
+        const resultEl = modalBody.querySelector(`[data-probe-result-for=\"${escapeAttr(url)}\"]`);
+        if (!url) {
+          if (resultEl) resultEl.textContent = 'No address to probe.';
+          return;
+        }
+        btn.textContent = 'Probing...';
+        try {
+          const helperUrl = getHelperUrl();
+          const res = await fetch(helperUrl.replace(/\/+$/, '') + '/probe?url=' + encodeURIComponent(url));
+          const j = await res.json();
+          if (j.ok) {
+            const h = JSON.stringify(j.headers || {}, null, 2);
+            const bodySnippet = j.body ? j.body.slice(0, 1000) : '';
+            if (resultEl) resultEl.textContent = `Status: ${j.statusCode}\n\nHeaders:\n${h}\n\nBody snippet:\n${bodySnippet}`;
+          } else {
+            if (resultEl) resultEl.textContent = `Probe failed: ${j.error || 'unknown'}`;
+          }
+        } catch (err) {
+          if (resultEl) resultEl.textContent = `Probe error: ${String(err)}`;
+        }
+        btn.textContent = 'Probe';
+      });
+    });
+
+    // wire add buttons
+    modalBody.querySelectorAll("button[data-add-ip]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const ip = btn.getAttribute("data-add-ip");
+        const port = btn.getAttribute("data-add-port");
+        const endpoint = ip ? (window.location.protocol === 'https:' ? `https://${ip}${port?(':'+port):''}/` : `http://${ip}${port?(':'+port):''}/`) : '';
+
+        const dev = {
+          id: uid(),
+          name: `Discovered ${ip}`,
+          type: "light",
+          provider: "generic_http",
+          endpoint,
+          capabilities: defaultCapabilitiesForType("light")
+        };
+
+        devices.push(dev);
+        persistDevices();
+        renderAll();
+        setBuilderMessage(`Added ${ip}`);
+      });
+    });
+
+  } catch (err) {
+    const msg = String(err || 'Error');
+    modalBody.innerHTML = `<div class=\"muted\">Failed to fetch helper devices from <strong>${escapeHtml(helperUrl)}</strong>: ${escapeHtml(msg)}</div>`;
+    modalBody.innerHTML += `<div class=\"tiny muted\" style=\"margin-top:8px;\">Start the helper with:<br/><code>npm install && npm start</code> (run in the repo)</div>`;
+    modalFooter.innerHTML = `<div class=\"actions\"><button class=\"btn\" id=\"btnCloseModal4\">Close</button></div>`;
+    document.getElementById("btnCloseModal4").addEventListener("click", closeModal);
+  }
+}
+
+function openNetworkScanner() {
+  const body = `
+    <div class="field">
+      <span class="field__label">IP base</span>
+      <input class="input" id="scanBase" type="text" placeholder="e.g., 192.168.1" value="192.168.1" />
+    </div>
+    <div class="fieldRow">
+      <div style="flex:1; margin-right:8px;">
+        <span class="field__label">Start</span>
+        <input class="input" id="scanStart" type="number" min="1" max="254" value="1" />
+      </div>
+      <div style="flex:1;">
+        <span class="field__label">End</span>
+        <input class="input" id="scanEnd" type="number" min="1" max="254" value="30" />
+      </div>
+    </div>
+    <div class="field">
+      <span class="field__label">Probe path</span>
+      <input class="input" id="scanPath" type="text" placeholder="e.g., /" value="/" />
+      <div class="tiny muted" style="margin-top:6px;">Uses fetch with <code>mode: 'no-cors'</code> to detect responsive hosts. CORS may prevent reading responses; this only detects reachable endpoints.</div>
+    </div>
+    <div class="divider"></div>
+    <div id="scanResults" style="max-height:240px; overflow:auto;"></div>
+  `;
+
+  const footer = `
+    <div class="actions" style="margin:0;">
+      <button class="btn" id="btnCancelScan" type="button">Close</button>
+      <button class="btn btnPrimary" id="btnStartScan" type="button">Start scan</button>
+    </div>
+  `;
+
+  openModal("Scan local network", body, footer);
+
+  document.getElementById("btnCancelScan").addEventListener("click", closeModal);
+
+  document.getElementById("btnStartScan").addEventListener("click", async () => {
+    const base = document.getElementById("scanBase").value.trim();
+    const start = clamp(Number(document.getElementById("scanStart").value), 1, 254);
+    const end = clamp(Number(document.getElementById("scanEnd").value), 1, 254);
+    const path = document.getElementById("scanPath").value || "/";
+
+    const resultsEl = document.getElementById("scanResults");
+    resultsEl.innerHTML = "Scanning...";
+
+    try {
+      const found = await scanIpRange(base, start, end, path, {concurrency:40, timeout:2500});
+      if (!found.length) {
+        resultsEl.innerHTML = `<div class=\"muted\">No responsive hosts found in the given range.</div>`;
+        return;
+      }
+
+      resultsEl.innerHTML = "";
+      for (const ip of found) {
+        const row = document.createElement("div");
+        row.className = "devicePickRow";
+        row.innerHTML = `
+          <div style=\"display:flex;align-items:center;justify-content:space-between;\">
+            <div>${ip}</div>
+            <div>
+              <button class=\"btn\" data-ip=\"${ip}\" type=\"button\">Probe</button>
+              <button class=\"btn btnPrimary\" data-add=\"${ip}\" type=\"button\">Add</button>
+            </div>
+          </div>
+        `;
+
+        row.querySelectorAll("button").forEach((b) => {
+          b.addEventListener("click", async () => {
+            const ip = b.getAttribute("data-ip") || b.getAttribute("data-add");
+            if (b.hasAttribute("data-ip")) {
+              // show probe details
+              b.textContent = "Probing...";
+              try {
+                const ok = await probeHost(ip, path, 2000);
+                b.textContent = ok ? "Responsive" : "No response";
+              } catch (e) {
+                b.textContent = "Error";
+              }
+              setTimeout(() => (b.textContent = "Probe"), 1200);
+              return;
+            }
+
+            // Add discovered host as generic_http device
+            const endpoint = window.location.protocol === "https:" ? `https://${ip}${path}` : `http://${ip}${path}`;
+            const dev = {
+              id: uid(),
+              name: `Discovered ${ip}`,
+              type: "light",
+              provider: "generic_http",
+              endpoint,
+              capabilities: defaultCapabilitiesForType("light")
+            };
+            devices.push(dev);
+            persistDevices();
+            renderAll();
+            setBuilderMessage(`Added ${ip}`);
+          });
+        });
+
+        resultsEl.appendChild(row);
+      }
+    } catch (err) {
+      document.getElementById("scanResults").innerHTML = `<div class=\"muted\">Scan failed: ${escapeHtml(String(err))}</div>`;
+    }
+  });
+}
+
+async function scanIpRange(base, start, end, path, opts = {}) {
+  const found = [];
+  const concurrency = opts.concurrency || 20;
+  const timeout = opts.timeout || 2000;
+
+  const ips = [];
+  for (let i = start; i <= end; i++) {
+    ips.push(`${base}.${i}`);
+  }
+
+  let idx = 0;
+  const workers = new Array(concurrency).fill(0).map(async () => {
+    while (idx < ips.length) {
+      const i = idx++;
+      const ip = ips[i];
+      try {
+        const ok = await probeHost(ip, path, timeout);
+        if (ok) found.push(ip);
+      } catch (e) {
+        // ignore
+      }
+    }
+  });
+
+  await Promise.all(workers);
+  return found;
+}
+
+async function probeHost(ip, path, timeout = 2000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  const url = `${window.location.protocol === 'https:' ? 'https' : 'http'}://${ip}${path}`;
+  try {
+    // mode:no-cors allows the request to succeed in many local cases
+    await fetch(url, { method: 'GET', mode: 'no-cors', signal: controller.signal });
+    clearTimeout(timer);
+    return true;
+  } catch (err) {
+    clearTimeout(timer);
+    return false;
+  }
+}
 
 function persistDevices() {
   saveJSON(STORAGE_KEYS.DEVICES, devices);

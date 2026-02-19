@@ -1,0 +1,2 @@
+LightController Node helper running on http://0.0.0.0:3000
+Endpoints: GET /devices   POST /scan   POST /clear
